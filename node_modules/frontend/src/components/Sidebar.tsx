@@ -11,21 +11,27 @@ import BoltIcon from '@mui/icons-material/Bolt';
 import LogoutIcon from '@mui/icons-material/Logout';
 import { useAuth } from '../auth/AuthContext';
 import PersonIcon from '@mui/icons-material/Person';
+import GroupIcon from '@mui/icons-material/Group';
 
 const menuItems = [
-  { text: 'ACCESOS', icon: <KeyIcon />, path: '/accounts' },
-  { text: 'SALDOS', icon: <AccountBalanceWalletIcon />, path: '/balances' },
-  { text: 'REGLAS GASOLINA', icon: <RuleIcon />, path: '/admin/reglas' },
-  { text: 'CHOFERES', icon: <PeopleIcon />, path: '/admin/choferes' },
-  { text: 'VEHÍCULOS', icon: <DirectionsCarIcon />, path: '/admin/vehiculos' },
-  { text: 'DISPERSIÓN', icon: <BoltIcon />, path: '/admin/dispersion' },
-  { text: 'MOVIMIENTOS', icon: <HistoryIcon />, path: '/movimientos' },
+  { text: 'ACCESOS GASOLINA', icon: <KeyIcon />, path: '/accounts', permission: 'ADMIN_FULL_ACCESS' },
+  { text: 'SALDOS', icon: <AccountBalanceWalletIcon />, path: '/balances', permission: 'GASOLINA_VER' },
+  { text: 'REGLAS GASOLINA', icon: <RuleIcon />, path: '/admin/reglas', permission: 'GASOLINA_CONFIG_REGLAS' },
+  { text: 'CHOFERES', icon: <PeopleIcon />, path: '/admin/choferes', permission: 'CHOFERES_VER' },
+  { text: 'VEHÍCULOS', icon: <DirectionsCarIcon />, path: '/admin/vehiculos', permission: 'VEHICULOS_VER' },
+  { text: 'DISPERSIÓN', icon: <BoltIcon />, path: '/admin/dispersion', permission: 'GASOLINA_DISPERSAR' },
+  { text: 'MOVIMIENTOS', icon: <HistoryIcon />, path: '/movimientos', permission: 'ADMIN_FULL_ACCESS' },
+  { text: 'USUARIOS', icon: <PersonIcon />, path: '/identity/users', permission: 'IDENTITY_GESTION' },
+  { text: 'ROLES Y ACCESOS', icon: <KeyIcon />, path: '/identity/roles', permission: 'IDENTITY_GESTION' },
+  { text: 'GRUPOS LOGÍSTICOS', icon: <GroupIcon />, path: '/identity/groups', permission: 'IDENTITY_GESTION' },
 ];
 
 export const Sidebar: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { usuario, logout } = useAuth();
+  const { usuario, logout, hasPermission } = useAuth();
+
+  const filteredItems = menuItems.filter(item => !item.permission || hasPermission(item.permission));
 
   return (
     <Box
@@ -43,6 +49,7 @@ export const Sidebar: React.FC = () => {
         boxShadow: '4px 0 24px rgba(0,0,0,0.02)'
       }}
     >
+      {/* ... rest of the component header ... */}
       <Box sx={{ p: 4, display: 'flex', alignItems: 'center', gap: 2 }}>
         <Box 
           sx={{ 
@@ -106,7 +113,7 @@ export const Sidebar: React.FC = () => {
       </Box>
 
       <List sx={{ px: 2, flexGrow: 1 }}>
-        {menuItems.map((item) => {
+        {filteredItems.map((item) => {
           const active = location.pathname === item.path;
           return (
             <ListItem key={item.text} disablePadding sx={{ mb: 0.5 }}>

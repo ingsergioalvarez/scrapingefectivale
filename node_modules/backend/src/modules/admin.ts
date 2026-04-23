@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import { AuthRequest } from '../middleware/verificarToken'
 import {
   getGasolinaRequest,
   listGasolinaRequests,
@@ -20,6 +21,8 @@ import {
   updateVehiculo,
   deleteVehiculo,
   listAccountsMySql,
+  getCardNip,
+  logNipConsultation,
 } from '../store/mysql-store'
 import { runSingleTopupRequest } from '../services/telegram-helpers'
 import { notifyTelegramUser } from '../services/telegram-notify'
@@ -27,14 +30,18 @@ import {
   scrapeEfectivaleSaldoSnapshotAsJson, 
   processEfectivaleTopup,
   processEfectivaleBulkTopup,
-  fetchEfectivaleWalletBalance 
+  fetchEfectivaleWalletBalance,
 } from '../scrapers/efectivale'
 
 export const adminRouter = Router()
 
 // --- CUENTAS (ACCESOS) ---
-adminRouter.get('/accounts', async (_req, res) => {
+adminRouter.get('/accounts', async (req: AuthRequest, res) => {
   try {
+    const isAdmin = req.usuario?.permisos?.includes('ADMIN_FULL_ACCESS')
+    if (!isAdmin) {
+      return res.status(403).json({ error: 'Acceso denegado. Se requiere nivel Administrador.' })
+    }
     const rows = await listAccountsMySql()
     res.json(rows)
   } catch (e: any) {
@@ -69,9 +76,11 @@ adminRouter.get('/wallet-balance/:accountId', async (req, res) => {
 })
 
 // --- CHOFERES ---
-adminRouter.get('/choferes', async (_req, res) => {
+adminRouter.get('/choferes', async (req: AuthRequest, res) => {
   try {
-    const rows = await listChoferes()
+    const isAdmin = req.usuario?.permisos?.includes('ADMIN_FULL_ACCESS')
+    const allowedGroups = req.usuario?.grupos || []
+    const rows = await listChoferes(allowedGroups, isAdmin)
     res.json(rows)
   } catch (e: any) {
     res.status(500).json({ error: e?.message ?? String(e) })
@@ -80,7 +89,8 @@ adminRouter.get('/choferes', async (_req, res) => {
 
 adminRouter.post('/choferes', async (req, res) => {
   try {
-    const id = await createChofer(req.body.nombre)
+    const { nombre, grupo_id } = req.body
+    const id = await createChofer(nombre, grupo_id)
     res.json({ ok: true, id })
   } catch (e: any) {
     res.status(500).json({ error: e?.message ?? String(e) })
@@ -89,7 +99,8 @@ adminRouter.post('/choferes', async (req, res) => {
 
 adminRouter.put('/choferes/:id', async (req, res) => {
   try {
-    await updateChofer(Number(req.params.id), req.body.nombre)
+    const { nombre, grupo_id } = req.body
+    await updateChofer(Number(req.params.id), nombre, grupo_id)
     res.json({ ok: true })
   } catch (e: any) {
     res.status(500).json({ error: e?.message ?? String(e) })
@@ -125,9 +136,11 @@ adminRouter.get('/choferes/:id/history', async (req, res) => {
 })
 
 // --- VEHÍCULOS ---
-adminRouter.get('/vehiculos', async (_req, res) => {/*  */
+adminRouter.get('/vehiculos', async (req: AuthRequest, res) => {
   try {
-    const rows = await listVehiculos()
+    const isAdmin = req.usuario?.permisos?.includes('ADMIN_FULL_ACCESS')
+    const allowedGroups = req.usuario?.grupos || []
+    const rows = await listVehiculos(allowedGroups, isAdmin)
     res.json(rows)
   } catch (e: any) {
     res.status(500).json({ error: e?.message ?? String(e) })
@@ -181,17 +194,23 @@ adminRouter.get('/mysql-status', (_req, res) => {
   res.json({ enabled: mysqlEnabled() })
 })
 
-adminRouter.get('/balances', async (_req, res) => {
+adminRouter.get('/balances', async (req: AuthRequest, res) => {
   try {
-    const rows = await listLatestBalances()
+    const isAdmin = req.usuario?.permisos?.includes('ADMIN_FULL_ACCESS')
+    const allowedGroups = req.usuario?.grupos || []
+    const rows = await listLatestBalances(allowedGroups, isAdmin)
     res.json(rows)
   } catch (e: any) {
     res.status(500).json({ error: e?.message ?? String(e) })
   }
 })
 
-adminRouter.get('/gasolina', async (req, res) => {
+adminRouter.get('/gasolina', async (req: AuthRequest, res) => {
   try {
+    const isAdmin = req.usuario?.permisos?.includes('ADMIN_FULL_ACCESS')
+    if (!isAdmin) {
+      return res.status(403).json({ error: 'Acceso denegado. Se requiere nivel Administrador.' })
+    }
     const status = typeof req.query.status === 'string' ? req.query.status : undefined
     const rows = await listGasolinaRequests(status)
     res.json(rows)
@@ -200,9 +219,9 @@ adminRouter.get('/gasolina', async (req, res) => {
   }
 })
 
-adminRouter.post('/gasolina/:id/approve', async (req, res) => {
+adminRouter.post('/gasolina/:id/approve', async (req: AuthRequest, res) => {
   try {
-    const row = await getGasolinaRequest(req.params.id)
+    const row = await getGasolinaRequest(String(req.params.id))
     if (!row || row.status !== 'pending') {
       res.status(404).json({ error: 'Solicitud no encontrada o ya procesada' })
       return
@@ -236,8 +255,8 @@ adminRouter.post('/gasolina/:id/approve', async (req, res) => {
       status: 'dispersed', 
       admin_note: note, 
       error_message: null,
-      admin_approver_name: 'Dashboard Admin',
-      admin_approver_id: 1
+      admin_approver_name: req.usuario?.nombre || 'Admin',
+      admin_approver_id: req.usuario?.id || 0
     })
     await notifyTelegramUser(
       row.telegram_chat_id,
@@ -246,13 +265,13 @@ adminRouter.post('/gasolina/:id/approve', async (req, res) => {
     res.json({ ok: true, result })
   } catch (e: any) {
     try {
-      const row = await getGasolinaRequest(req.params.id)
+      const row = await getGasolinaRequest(String(req.params.id))
       if (row) {
         await updateGasolinaRequest(row.id, { 
           status: 'error', 
           error_message: e?.message ?? String(e),
-          admin_approver_name: 'Dashboard Admin (Failed)',
-          admin_approver_id: 1
+          admin_approver_name: req.usuario?.nombre || 'Admin',
+          admin_approver_id: req.usuario?.id || 0
         })
       }
       if (row) {
@@ -268,9 +287,9 @@ adminRouter.post('/gasolina/:id/approve', async (req, res) => {
   }
 })
 
-adminRouter.post('/gasolina/:id/reject', async (req, res) => {
+adminRouter.post('/gasolina/:id/reject', async (req: AuthRequest, res) => {
   try {
-    const row = await getGasolinaRequest(req.params.id)
+    const row = await getGasolinaRequest(String(req.params.id))
     if (!row || row.status !== 'pending') {
       res.status(404).json({ error: 'Solicitud no encontrada o ya procesada' })
       return
@@ -279,8 +298,8 @@ adminRouter.post('/gasolina/:id/reject', async (req, res) => {
     await updateGasolinaRequest(row.id, { 
       status: 'rejected', 
       admin_note: note,
-      admin_approver_name: 'Dashboard Admin',
-      admin_approver_id: 1
+      admin_approver_name: req.usuario?.nombre || 'Admin',
+      admin_approver_id: req.usuario?.id || 0
     })
     await notifyTelegramUser(
       row.telegram_chat_id,
@@ -292,7 +311,7 @@ adminRouter.post('/gasolina/:id/reject', async (req, res) => {
   }
 })
 
-adminRouter.post('/disperse-bulk', async (req, res) => {
+adminRouter.post('/disperse-bulk', async (req: AuthRequest, res) => {
   const requests: { cuenta: string, monto: number, accountId?: number }[] = req.body.requests || []
   if (requests.length === 0) return res.json({ ok: true, results: [] })
 
@@ -378,6 +397,30 @@ adminRouter.post('/rules', async (req, res) => {
   try {
     const id = await upsertTopupRuleMySql(req.body)
     res.json({ ok: true, id })
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message ?? String(e) })
+  }
+})
+
+// Endpoint para consultar NIP con auditoría
+adminRouter.get('/rules/nip/:cuenta', async (req: AuthRequest, res) => {
+  try {
+    const { cuenta } = req.params
+    // El token puede venir con 'id' o 'sub' según el estándar JWT utilizado
+    const usuario_id = req.usuario?.id
+    
+    if (!usuario_id) {
+      return res.status(401).json({ error: 'No autenticado. Sesión inválida.' })
+    }
+
+    const nip = await getCardNip(cuenta)
+    if (!nip) return res.status(404).json({ error: 'NIP no configurado para esta tarjeta' })
+
+    // Registrar auditoría
+    const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'unknown'
+    await logNipConsultation(usuario_id, cuenta, ip)
+
+    res.json({ ok: true, nip })
   } catch (e: any) {
     res.status(500).json({ error: e?.message ?? String(e) })
   }

@@ -48,6 +48,7 @@ type TopupRule = {
   enabled: boolean
   inactive_reason: string | null
   notes: string | null
+  nip: string | null
   chofer_nombre?: string
   vehiculo_placas?: string
   account_alias?: string
@@ -354,7 +355,31 @@ export function AdminRulesPage() {
               />
             </Grid>
 
-            {/* FILA 5: MOTIVO */}
+            {/* FILA 5: NIP Y NOTAS */}
+            <Grid item xs={6}>
+              <Typography variant="caption" sx={{ mb: 1, display: 'block', fontWeight: 800, color: 'primary.main', textTransform: 'uppercase' }}>
+                NIP de la Tarjeta
+              </Typography>
+              <TextField 
+                fullWidth 
+                value={editingRow?.nip || ''} 
+                onChange={e => setEditingRow(p => p ? {...p, nip: e.target.value} : null)}
+                inputProps={{ maxLength: 10 }}
+              />
+            </Grid>
+
+            <Grid item xs={6}>
+              <Typography variant="caption" sx={{ mb: 1, display: 'block', fontWeight: 800, color: 'primary.main', textTransform: 'uppercase' }}>
+                Notas
+              </Typography>
+              <TextField 
+                fullWidth 
+                value={editingRow?.notes || ''} 
+                onChange={e => setEditingRow(p => p ? {...p, notes: e.target.value} : null)}
+              />
+            </Grid>
+
+            {/* FILA 6: MOTIVO */}
             {!editingRow?.enabled && (
               <Grid item xs={12}>
                 <Typography variant="caption" sx={{ mb: 1, display: 'block', fontWeight: 800, color: 'error.main', textTransform: 'uppercase' }}>

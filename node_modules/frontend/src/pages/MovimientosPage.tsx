@@ -119,7 +119,11 @@ export const MovimientosPage: React.FC = () => {
             {filtered.map((m) => (
               <TableRow key={m.id} hover>
                 <TableCell sx={{ color: 'text.secondary', fontSize: '0.75rem', fontWeight: 600 }}>
-                  {new Date(m.created_at).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' }).toUpperCase()}
+                  {new Date(m.created_at).toLocaleString('es-MX', { 
+                    dateStyle: 'short', 
+                    timeStyle: 'short',
+                    timeZone: 'America/Mexico_City'
+                  }).toUpperCase()}
                 </TableCell>
                 <TableCell>
                   <Typography variant="body2" sx={{ fontWeight: 800, textTransform: 'uppercase' }}>

@@ -9,7 +9,9 @@ import { reportsRouter } from './modules/reports'
 import { utilsRouter } from './modules/utils'
 import { adminRouter } from './modules/admin'
 import authRouter from './modules/auth/auth.router'
+import identityRouter from './modules/identity/identity.router'
 import { verificarToken } from './middleware/verificarToken'
+import { verificarPermiso } from './middleware/verificarPermiso'
 import { buildEfectivaleGasolinaReporteXlsx, maybeEmailReport } from './services/reporting'
 import { runFridayTopupsEfectivale } from './services/topup'
 import { startTelegramBot, stopTelegramBot } from './services/telegram-bot'
@@ -18,6 +20,7 @@ import { listAccounts, getSession, getStorePathForDebug } from './store/excel-st
 import fs from 'node:fs'
 import { runEfectivaleSaldoSnapshot } from './services/saldo-snapshot'
 import { errorMiddleware } from './middleware/error'
+import readline from 'node:readline'
 
 const app = express()
 app.use(cors())
@@ -28,6 +31,7 @@ app.get('/health', async (_req, res) => {
 })
 
 app.use('/api/auth', authRouter)
+app.use('/api/identity', verificarToken, verificarPermiso('IDENTITY_GESTION'), identityRouter)
 app.use('/api/accounts', verificarToken, accountsRouter)
 app.use('/api/sessions', verificarToken, sessionsRouter)
 app.use('/api/scrape', verificarToken, scrapeRouter)
@@ -107,24 +111,18 @@ void startTelegramBot()
       
       // Barrido inicial si está configurado para "boot"
       if (process.env.INITIAL_SWEEP === 'true') {
-        // eslint-disable-next-line no-console
-        console.log('[boot] iniciando barrido de saldos inicial...')
+        console.log('[boot] iniciando barrido de saldos inicial...');
         try {
           const rSnapshot = await runEfectivaleSaldoSnapshot('boot')
           if ('rows' in rSnapshot) {
-            // eslint-disable-next-line no-console
             console.log(`[boot] barrido completado: ${rSnapshot.rows} filas`)
-            
-            // Sincronizar reglas automáticamente después del barrido
             const { seedRulesFromSaldos } = await import('./store/mysql-store')
             const seedCount = await seedRulesFromSaldos()
             if (seedCount > 0) {
-              // eslint-disable-next-line no-console
               console.log(`[boot] reglas sincronizadas: ${seedCount} nuevas reglas creadas.`)
             }
           }
         } catch (e: any) {
-          // eslint-disable-next-line no-console
           console.error('[boot] error en barrido inicial:', e?.message ?? e)
         }
       }

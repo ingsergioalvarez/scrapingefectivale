@@ -7,7 +7,8 @@ import {
   createManualGasolinaMovement, 
   listTopupRulesMySql,
   listLatestBalances,
-  updateWalletBalance
+  updateWalletBalance,
+  getCurrentAssignmentByCuenta
 } from '../store/mysql-store'
 import path from 'path'
 import fs from 'fs'
@@ -124,12 +125,22 @@ export async function processEfectivaleBulkTopup(args: {
              const rule = allRules.find(r => r.cuenta === req.cuenta);
              const balance = allBalances.find(b => b.cuenta === req.cuenta);
 
+             // Mejorar resolución: Si la regla no tiene chofer, buscar asignación activa
+             let chofer_id = rule?.chofer_id;
+             let vehiculo_id = rule?.vehiculo_id;
+
+             if (!chofer_id) {
+               const active = await getCurrentAssignmentByCuenta(req.cuenta);
+               chofer_id = active.chofer_id;
+               vehiculo_id = active.vehiculo_id;
+             }
+
              await createManualGasolinaMovement({
                cuenta: req.cuenta,
                monto: req.monto,
                status: 'dispersed',
-               chofer_id: rule?.chofer_id,
-               vehiculo_id: rule?.vehiculo_id,
+               chofer_id,
+               vehiculo_id,
                tarjeta: balance?.tarjeta || rule?.alias, // Fallback al alias si no hay tarjeta
                codigo_card: rule?.short_code?.toString()
              });
@@ -480,7 +491,7 @@ async function gotoDisperisonTarjeta(page: any, log: Logger) {
   await page.getByText('Menú Efectinet', { exact: true }).click({ timeout: 60000, force: true }).catch(async (e: any) => {
     log('Timeout en menú principal, intentando recargar página...')
     await page.reload()
-    await page.getByText('Menú Efectinet', { exact: true }).click({ timeout: 30000, force: true })
+    await page.getByText('Menú Efectinet', { exact: true }).click({ timeout: 45000, force: true })
   })
   log('Click: Administración de Servicios')
   await closeModalIfPresent(page)

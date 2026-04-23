@@ -8,6 +8,7 @@ export function mysqlEnabled(): boolean {
 }
 
 export async function ensureMysqlTables(): Promise<void> {
+  console.log('[mysql] Verificando tablas...');
   // 1. Cuentas (Accesos)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS efectivale_accounts (
@@ -25,6 +26,7 @@ export async function ensureMysqlTables(): Promise<void> {
       UNIQUE INDEX idx_app_user (app, username)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
   `)
+  console.log('[mysql] Tabla efectivale_accounts lista');
 
   try {
     await pool.query(`ALTER TABLE efectivale_accounts ADD COLUMN wallet_balance DECIMAL(15,2) DEFAULT 0 AFTER extra_json;`)
@@ -123,17 +125,32 @@ export async function ensureMysqlTables(): Promise<void> {
       enabled BOOLEAN DEFAULT TRUE,
       inactive_reason TEXT NULL,
       notes TEXT NULL,
+      nip VARCHAR(10) NULL,
       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       UNIQUE INDEX idx_cuenta (cuenta)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
   `)
 
-  // Asegurar que la columna modo_carga existe (para bases de datos ya creadas)
+  // Asegurar que las columnas existen
   try {
     await pool.query(`ALTER TABLE telegram_topup_rules ADD COLUMN modo_carga VARCHAR(32) DEFAULT 'COMPLETAR' AFTER frecuencia;`)
-  } catch (err) {
-    // Si ya existe, fallará silenciosamente
-  }
+  } catch (err) {}
+  try {
+    await pool.query(`ALTER TABLE telegram_topup_rules ADD COLUMN nip VARCHAR(10) NULL AFTER notes;`)
+  } catch (err) {}
+
+  // 12. Auditoría NIPs
+  console.log('[mysql] Verificando sys_auditoria_nips...');
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS sys_auditoria_nips (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      usuario_id INT NOT NULL,
+      cuenta VARCHAR(50) NOT NULL,
+      fecha DATETIME DEFAULT CURRENT_TIMESTAMP,
+      ip_address VARCHAR(45)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `)
+  console.log('[mysql] Tabla sys_auditoria_nips lista');
 
   // 7. Sesiones de Bot de Telegram
   await pool.query(`
@@ -144,29 +161,61 @@ export async function ensureMysqlTables(): Promise<void> {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
   `)
 
-  // 8. Choferes
+  // 8. Grupos Logísticos
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS cv_grupos (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      nombre VARCHAR(100) NOT NULL UNIQUE,
+      descripcion TEXT,
+      activo BOOLEAN DEFAULT TRUE,
+      fecha_creacion DATETIME DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `)
+
+  // Relación Usuarios -> Grupos (Para limitar visibilidad)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS cv_usuario_grupos (
+      usuario_id INT NOT NULL,
+      grupo_id INT NOT NULL,
+      PRIMARY KEY (usuario_id, grupo_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `)
+
+  // 9. Choferes
   await pool.query(`
     CREATE TABLE IF NOT EXISTS cv_choferes (
       id INT AUTO_INCREMENT PRIMARY KEY,
       nombre VARCHAR(255) NOT NULL,
+      grupo_id INT NULL,
       activo BOOLEAN DEFAULT TRUE,
       fecha_creacion DATETIME DEFAULT CURRENT_TIMESTAMP,
-      fecha_actualizacion DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      fecha_actualizacion DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      CONSTRAINT fk_chofer_grupo FOREIGN KEY (grupo_id) REFERENCES cv_grupos(id) ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
   `)
 
-  // 9. Vehículos
+  try {
+    await pool.query(`ALTER TABLE cv_choferes ADD COLUMN grupo_id INT NULL AFTER nombre;`)
+  } catch (e) {}
+
+  // 10. Vehículos
   await pool.query(`
     CREATE TABLE IF NOT EXISTS cv_vehiculos (
       id INT AUTO_INCREMENT PRIMARY KEY,
       placas VARCHAR(20) NOT NULL UNIQUE,
       modelo VARCHAR(100) NULL,
       anio INT NULL,
+      grupo_id INT NULL,
       activo BOOLEAN DEFAULT TRUE,
       fecha_creacion DATETIME DEFAULT CURRENT_TIMESTAMP,
-      fecha_actualizacion DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      fecha_actualizacion DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      CONSTRAINT fk_vehiculo_grupo FOREIGN KEY (grupo_id) REFERENCES cv_grupos(id) ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
   `)
+
+  try {
+    await pool.query(`ALTER TABLE cv_vehiculos ADD COLUMN grupo_id INT NULL AFTER anio;`)
+  } catch (e) {}
 
   // 10. Historial de Asignaciones
   await pool.query(`
@@ -549,18 +598,26 @@ export type ChoferRow = {
   fecha_actualizacion: Date
 }
 
-export async function listChoferes(): Promise<any[]> {
-  const [rows] = await pool.query<any[]>(`
-    SELECT c.*, 
+export async function listChoferes(allowedGroups?: number[], isAdmin?: boolean): Promise<any[]> {
+  let query = `
+    SELECT c.*, g.nombre as grupo_nombre,
            (SELECT GROUP_CONCAT(alias SEPARATOR ' | ') FROM telegram_topup_rules WHERE chofer_id = c.id) as tarjetas,
            (SELECT GROUP_CONCAT(DISTINCT v.placas SEPARATOR ' | ') 
             FROM telegram_topup_rules r 
             JOIN cv_vehiculos v ON r.vehiculo_id = v.id 
             WHERE r.chofer_id = c.id) as vehiculos
     FROM cv_choferes c 
+    LEFT JOIN cv_grupos g ON c.grupo_id = g.id
     WHERE c.activo = 1 
-    ORDER BY c.nombre ASC
-  `)
+  `
+  const params: any[] = []
+  if (!isAdmin && allowedGroups && allowedGroups.length > 0) {
+    query += ` AND c.grupo_id IN (?) `
+    params.push(allowedGroups)
+  }
+  
+  query += ` ORDER BY c.nombre ASC`
+  const [rows] = await pool.query<any[]>(query, params)
   return rows
 }
 
@@ -572,13 +629,13 @@ export async function getChoferHistory(choferId: number): Promise<any[]> {
   return rows
 }
 
-export async function createChofer(nombre: string): Promise<number> {
-  const [result]: any = await pool.execute(`INSERT INTO cv_choferes (nombre) VALUES (?)`, [nombre])
+export async function createChofer(nombre: string, grupoId?: number | null): Promise<number> {
+  const [result]: any = await pool.execute(`INSERT INTO cv_choferes (nombre, grupo_id) VALUES (?, ?)`, [nombre, grupoId || null])
   return result.insertId
 }
 
-export async function updateChofer(id: number, nombre: string): Promise<void> {
-  await pool.execute(`UPDATE cv_choferes SET nombre = ? WHERE id = ?`, [nombre, id])
+export async function updateChofer(id: number, nombre: string, grupoId?: number | null): Promise<void> {
+  await pool.execute(`UPDATE cv_choferes SET nombre = ?, grupo_id = ? WHERE id = ?`, [nombre, grupoId || null, id])
 }
 
 export async function deleteChofer(id: number): Promise<void> {
@@ -613,25 +670,35 @@ export type VehiculoRow = {
   fecha_actualizacion: Date
 }
 
-export async function listVehiculos(): Promise<VehiculoRow[]> {
-  const [rows] = await pool.query<any[]>(`SELECT * FROM cv_vehiculos WHERE activo = 1 ORDER BY placas ASC`)
+export async function listVehiculos(allowedGroups?: number[], isAdmin?: boolean): Promise<any[]> {
+  let query = `SELECT v.*, g.nombre as grupo_nombre FROM cv_vehiculos v LEFT JOIN cv_grupos g ON v.grupo_id = g.id WHERE v.activo = 1`
+  const params: any[] = []
+  
+  if (!isAdmin && allowedGroups && allowedGroups.length > 0) {
+    query += ` AND v.grupo_id IN (?)`
+    params.push(allowedGroups)
+  }
+  
+  query += ` ORDER BY v.placas ASC`
+  const [rows] = await pool.query<any[]>(query, params)
   return rows
 }
 
-export async function createVehiculo(input: { placas: string, modelo?: string, anio?: number }): Promise<number> {
+export async function createVehiculo(input: { placas: string, modelo?: string, anio?: number, grupo_id?: number | null }): Promise<number> {
   const [result]: any = await pool.execute(
-    `INSERT INTO cv_vehiculos (placas, modelo, anio) VALUES (?, ?, ?)`,
-    [input.placas, input.modelo || null, input.anio || null]
+    `INSERT INTO cv_vehiculos (placas, modelo, anio, grupo_id) VALUES (?, ?, ?, ?)`,
+    [input.placas, input.modelo || null, input.anio || null, input.grupo_id || null]
   )
   return result.insertId
 }
 
-export async function updateVehiculo(id: number, patch: Partial<VehiculoRow>): Promise<void> {
+export async function updateVehiculo(id: number, patch: Partial<VehiculoRow> & { grupo_id?: number | null }): Promise<void> {
   const fields = []
   const values = []
   if (patch.placas !== undefined) { fields.push('placas = ?'); values.push(patch.placas); }
   if (patch.modelo !== undefined) { fields.push('modelo = ?'); values.push(patch.modelo); }
   if (patch.anio !== undefined) { fields.push('anio = ?'); values.push(patch.anio); }
+  if (patch.grupo_id !== undefined) { fields.push('grupo_id = ?'); values.push(patch.grupo_id); }
   if (fields.length === 0) return
   values.push(id)
   await pool.execute(`UPDATE cv_vehiculos SET ${fields.join(', ')} WHERE id = ?`, values)
@@ -648,11 +715,13 @@ export async function listTopupRulesMySql(): Promise<TopupRuleRow[]> {
     SELECT r.*, 
            c.nombre as chofer_nombre, 
            v.placas as vehiculo_placas,
-           acc.alias as account_alias
+           acc.alias as account_alias,
+           s.tarjeta as tarjeta_numero
     FROM telegram_topup_rules r
     LEFT JOIN cv_choferes c ON r.chofer_id = c.id
     LEFT JOIN cv_vehiculos v ON r.vehiculo_id = v.id
     LEFT JOIN efectivale_accounts acc ON r.efectivale_account_id = acc.id
+    LEFT JOIN efectivale_saldo_rows s ON r.cuenta = s.cuenta
     ORDER BY r.short_code ASC, r.alias ASC
   `)
   return rows.map(r => ({
@@ -677,30 +746,63 @@ export async function upsertTopupRuleMySql(rule: Partial<TopupRuleRow> & { cuent
     const oldChoferId = existing[0].chofer_id
     const oldVehiculoId = existing[0].vehiculo_id
 
-    // Si cambió el chofer de la tarjeta
+    // 1. Manejo de cambios de Chofer (Cerrar asignación anterior si cambió)
     if (oldChoferId !== newChoferId) {
-      if (oldChoferId) { // Cerrar anterior
-        await pool.execute(`UPDATE cv_historial_asignaciones SET fecha_fin = CURRENT_TIMESTAMP, activo = 0 WHERE chofer_id = ? AND tipo = 'GASOLINA' AND referencia = ? AND activo = 1`, [oldChoferId, rule.cuenta])
+      if (oldChoferId) {
+        // Cerrar Gasolina para el viejo
+        await pool.execute(
+          `UPDATE cv_historial_asignaciones SET fecha_fin = CURRENT_TIMESTAMP, activo = 0 
+           WHERE chofer_id = ? AND tipo = 'GASOLINA' AND referencia = ? AND activo = 1`, 
+          [oldChoferId, rule.cuenta]
+        )
+        // Cerrar Vehículo para el viejo (si lo tenía asignado vía esta tarjeta)
+        if (oldVehiculoId) {
+           await pool.execute(
+             `UPDATE cv_historial_asignaciones SET fecha_fin = CURRENT_TIMESTAMP, activo = 0 
+              WHERE chofer_id = ? AND tipo = 'VEHICULO' AND referencia = ? AND activo = 1`, 
+             [oldChoferId, String(oldVehiculoId)]
+           )
+        }
       }
-      if (newChoferId) { // Abrir nuevo
-        await pool.execute(`INSERT INTO cv_historial_asignaciones (chofer_id, tipo, referencia, detalles) VALUES (?, 'GASOLINA', ?, ?)`, [newChoferId, rule.cuenta, rule.alias || 'Tarjeta'])
-      }
-    }
-
-    // Si cambió el vehículo asignado a esta regla (y por ende al chofer actual)
-    if (oldVehiculoId !== newVehiculoId && newChoferId) {
-       // Esto es más complejo porque el vehículo se asigna a la regla, no directamente al chofer.
-       // Pero para efectos prácticos, si la regla tiene un chofer, registramos el cambio.
-       if (oldVehiculoId) {
-          await pool.execute(`UPDATE cv_historial_asignaciones SET fecha_fin = CURRENT_TIMESTAMP, activo = 0 WHERE chofer_id = ? AND tipo = 'VEHICULO' AND referencia = ? AND activo = 1`, [newChoferId, String(oldVehiculoId)])
-       }
-       if (newVehiculoId) {
+      
+      // Abrir nuevas asignaciones para el nuevo chofer
+      if (newChoferId) {
+        await pool.execute(
+          `INSERT INTO cv_historial_asignaciones (chofer_id, tipo, referencia, detalles) 
+           VALUES (?, 'GASOLINA', ?, ?)`, 
+          [newChoferId, rule.cuenta, rule.alias || 'Tarjeta']
+        )
+        if (newVehiculoId) {
           const [vRows]: any = await pool.query(`SELECT placas FROM cv_vehiculos WHERE id = ?`, [newVehiculoId])
           const placas = vRows[0]?.placas || 'Auto'
-          await pool.execute(`INSERT INTO cv_historial_asignaciones (chofer_id, tipo, referencia, detalles) VALUES (?, 'VEHICULO', ?, ?)`, [newChoferId, String(newVehiculoId), placas])
-       }
+          await pool.execute(
+            `INSERT INTO cv_historial_asignaciones (chofer_id, tipo, referencia, detalles) 
+             VALUES (?, 'VEHICULO', ?, ?)`, 
+            [newChoferId, String(newVehiculoId), placas]
+          )
+        }
+      }
+    } else if (oldVehiculoId !== newVehiculoId && newChoferId) {
+      // Si el chofer es EL MISMO pero cambió el vehículo
+      if (oldVehiculoId) {
+        await pool.execute(
+          `UPDATE cv_historial_asignaciones SET fecha_fin = CURRENT_TIMESTAMP, activo = 0 
+           WHERE chofer_id = ? AND tipo = 'VEHICULO' AND referencia = ? AND activo = 1`, 
+          [newChoferId, String(oldVehiculoId)]
+        )
+      }
+      if (newVehiculoId) {
+        const [vRows]: any = await pool.query(`SELECT placas FROM cv_vehiculos WHERE id = ?`, [newVehiculoId])
+        const placas = vRows[0]?.placas || 'Auto'
+        await pool.execute(
+          `INSERT INTO cv_historial_asignaciones (chofer_id, tipo, referencia, detalles) 
+           VALUES (?, 'VEHICULO', ?, ?)`, 
+          [newChoferId, String(newVehiculoId), placas]
+        )
+      }
     }
 
+    // Actualizar la regla principal
     await pool.execute(
       `UPDATE telegram_topup_rules SET 
         efectivale_account_id = ?, 
@@ -714,7 +816,8 @@ export async function upsertTopupRuleMySql(rule: Partial<TopupRuleRow> & { cuent
         modo_carga = ?,
         enabled = ?, 
         inactive_reason = ?,
-        notes = ? 
+        notes = ?,
+        nip = ?
       WHERE id = ?`,
       [
         rule.efectivale_account_id, 
@@ -729,15 +832,17 @@ export async function upsertTopupRuleMySql(rule: Partial<TopupRuleRow> & { cuent
         rule.enabled ?? true, 
         rule.inactive_reason ?? null,
         rule.notes ?? null, 
+        rule.nip ?? null,
         id
       ]
     )
     return id
   } else {
+    // NUEVA REGLA (INSERT)
     const [result]: any = await pool.execute(
       `INSERT INTO telegram_topup_rules 
-        (efectivale_account_id, cuenta, alias, short_code, chofer_id, vehiculo_id, min_saldo, max_saldo, frecuencia, modo_carga, enabled, inactive_reason, notes) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (efectivale_account_id, cuenta, alias, short_code, chofer_id, vehiculo_id, min_saldo, max_saldo, frecuencia, modo_carga, enabled, inactive_reason, notes, nip) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         rule.efectivale_account_id, 
         rule.cuenta, 
@@ -748,10 +853,11 @@ export async function upsertTopupRuleMySql(rule: Partial<TopupRuleRow> & { cuent
         rule.min_saldo ?? 0, 
         rule.max_saldo ?? 0, 
         rule.frecuencia ?? 'A LIBRE DEMANDA',
-        rule.modo_carga ?? 'COMPLETAR',
+        rule.modo_carga ?? 'COMPLETAR', 
         rule.enabled ?? true, 
         rule.inactive_reason ?? null,
-        rule.notes ?? null
+        rule.notes ?? null,
+        rule.nip ?? null
       ]
     )
     if (newChoferId) {
@@ -764,6 +870,21 @@ export async function upsertTopupRuleMySql(rule: Partial<TopupRuleRow> & { cuent
     }
     return result.insertId
   }
+}
+
+export async function logNipConsultation(usuario_id: number, cuenta: string, ip: string) {
+  await pool.execute(
+    `INSERT INTO sys_auditoria_nips (usuario_id, cuenta, ip_address) VALUES (?, ?, ?)`,
+    [usuario_id, cuenta, ip]
+  )
+}
+
+export async function getCardNip(cuenta: string): Promise<string | null> {
+  const [rows]: any = await pool.execute(
+    `SELECT nip FROM telegram_topup_rules WHERE cuenta = ?`,
+    [cuenta]
+  )
+  return rows[0]?.nip || null
 }
 
 function extractShortCode(alias: string): number | null {
@@ -798,6 +919,32 @@ export async function seedRulesFromSaldos() {
 
 export async function deleteTopupRuleMySql(id: number): Promise<void> {
   await pool.execute(`DELETE FROM telegram_topup_rules WHERE id = ?`, [id])
+}
+
+export async function getCurrentAssignmentByCuenta(cuenta: string): Promise<{ chofer_id: number | null, vehiculo_id: number | null }> {
+  // Buscar asignación de GASOLINA activa para esta cuenta
+  const [gasRows]: any = await pool.query(
+    `SELECT chofer_id FROM cv_historial_asignaciones 
+     WHERE tipo = 'GASOLINA' AND referencia = ? AND activo = 1 
+     ORDER BY fecha_inicio DESC LIMIT 1`, 
+    [cuenta]
+  );
+
+  if (gasRows.length === 0) return { chofer_id: null, vehiculo_id: null };
+
+  const chofer_id = gasRows[0].chofer_id;
+
+  // Buscar si ese mismo chofer tiene un VEHICULO activo
+  const [vehRows]: any = await pool.query(
+    `SELECT referencia FROM cv_historial_asignaciones 
+     WHERE tipo = 'VEHICULO' AND chofer_id = ? AND activo = 1 
+     ORDER BY fecha_inicio DESC LIMIT 1`,
+    [chofer_id]
+  );
+
+  const vehiculo_id = vehRows.length > 0 ? parseInt(vehRows[0].referencia, 10) : null;
+
+  return { chofer_id, vehiculo_id };
 }
 
 // --- SESIONES DE TELEGRAM ---
@@ -845,8 +992,8 @@ export async function getLatestSaldoByShortCode(shortCode: number) {
   }
 }
 
-export async function listLatestBalances(): Promise<any[]> {
-  const [rows]: any = await pool.query(`
+export async function listLatestBalances(allowedGroups?: number[], isAdmin?: boolean): Promise<any[]> {
+  let query = `
     SELECT 
       s.cuenta, 
       s.tarjeta, 
@@ -865,9 +1012,28 @@ export async function listLatestBalances(): Promise<any[]> {
     FROM efectivale_saldo_rows s
     LEFT JOIN telegram_topup_rules r ON s.cuenta = r.cuenta
     LEFT JOIN cv_choferes c ON r.chofer_id = c.id
+    LEFT JOIN cv_vehiculos v ON r.vehiculo_id = v.id
     LEFT JOIN efectivale_accounts acc ON s.efectivale_account_id = acc.id
-    ORDER BY r.short_code ASC, display_name ASC
-  `)
+  `
+  
+  const where: string[] = []
+  const params: any[] = []
+
+  if (!isAdmin && allowedGroups && allowedGroups.length > 0) {
+    // Si no es admin, solo ver lo de sus grupos
+    // Pero ojo: una tarjeta/chofer podría no tener grupo asignado (NULL). 
+    // Usualmente el admin asume que si no hay grupo es GENERAL o solo admin.
+    where.push(`(c.grupo_id IN (?) OR v.grupo_id IN (?))`)
+    params.push(allowedGroups, allowedGroups)
+  }
+
+  if (where.length > 0) {
+    query += ` WHERE ` + where.join(' AND ')
+  }
+
+  query += ` ORDER BY r.short_code ASC, display_name ASC`
+  
+  const [rows]: any = await pool.query(query, params)
   return rows
 }
 
@@ -908,24 +1074,26 @@ export async function updateWalletBalance(accountId: number, balance: number) {
   )
 }
 
-export async function getUserByEmail(email: string): Promise<any | null> {
+export async function getUserByEmail(email: string) {
   const [rows]: any = await pool.query(`
-    SELECT 
-      u.*,
-      GROUP_CONCAT(DISTINCT p.codigo) as permisos_lista
+    SELECT u.*, 
+           GROUP_CONCAT(DISTINCT p.codigo) as permisos,
+           GROUP_CONCAT(DISTINCT ug.grupo_id) as grupos
     FROM sys_usuarios u
     LEFT JOIN sys_usuario_roles ur ON u.id = ur.usuario_id
-    LEFT JOIN sys_rol_permisos rp ON ur.rol_id = rp.rol_id
+    LEFT JOIN sys_roles r ON ur.rol_id = r.id
+    LEFT JOIN sys_rol_permisos rp ON r.id = rp.rol_id
     LEFT JOIN sys_permisos p ON rp.permiso_id = p.id
+    LEFT JOIN cv_usuario_grupos ug ON u.id = ug.usuario_id
     WHERE u.email = ? AND u.activo = 1
     GROUP BY u.id
   `, [email])
-
-  if (rows.length === 0) return null
   
-  const user = rows[0]
+  if (!rows[0]) return null
+  
   return {
-    ...user,
-    permisos: user.permisos_lista ? user.permisos_lista.split(',') : []
+    ...rows[0],
+    permisos: rows[0].permisos ? rows[0].permisos.split(',') : [],
+    grupos: rows[0].grupos ? rows[0].grupos.split(',').map(Number) : []
   }
 }

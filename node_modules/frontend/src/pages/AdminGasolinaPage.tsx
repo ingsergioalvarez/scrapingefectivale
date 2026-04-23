@@ -116,7 +116,7 @@ export function AdminGasolinaPage() {
           <TableBody>
             {(list.data ?? []).map((r) => (
               <TableRow key={r.id}>
-                <TableCell>{new Date(r.created_at).toLocaleString('es-MX')}</TableCell>
+                <TableCell>{new Date(r.created_at).toLocaleString('es-MX', { timeZone: 'America/Mexico_City' })}</TableCell>
                 <TableCell>{r.solicitante_name ?? '—'}</TableCell>
                 <TableCell>{r.id_tipo}</TableCell>
                 <TableCell>

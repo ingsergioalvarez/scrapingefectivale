@@ -9,7 +9,7 @@ export const pool = mysql.createPool({
   database: config.mysql.database,
   connectionLimit: 10,
   namedPlaceholders: true,
-  timezone: 'Z',
+  timezone: '-06:00',
 })
 
 export async function pingDb() {

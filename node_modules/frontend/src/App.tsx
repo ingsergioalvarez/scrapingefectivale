@@ -9,6 +9,9 @@ import { ChoferesPage } from './pages/ChoferesPage';
 import { VehiculosPage } from './pages/VehiculosPage';
 import { DispersePage } from './pages/DispersePage';
 import { LoginPage } from './pages/LoginPage';
+import { UsersPage } from './pages/UsersPage';
+import { RolesPage } from './pages/RolesPage';
+import { GroupsPage } from './pages/GroupsPage';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 
 const lightTheme = createTheme({
@@ -127,6 +130,9 @@ export default function App() {
           <Route path="/admin/vehiculos" element={<ProtectedRoute><Layout><VehiculosPage /></Layout></ProtectedRoute>} />
           <Route path="/admin/dispersion" element={<ProtectedRoute><Layout><DispersePage /></Layout></ProtectedRoute>} />
           <Route path="/movimientos" element={<ProtectedRoute><Layout><MovimientosPage /></Layout></ProtectedRoute>} />
+          <Route path="/identity/users" element={<ProtectedRoute requiredPermission="IDENTITY_GESTION"><Layout><UsersPage /></Layout></ProtectedRoute>} />
+          <Route path="/identity/roles" element={<ProtectedRoute requiredPermission="IDENTITY_GESTION"><Layout><RolesPage /></Layout></ProtectedRoute>} />
+          <Route path="/identity/groups" element={<ProtectedRoute requiredPermission="IDENTITY_GESTION"><Layout><GroupsPage /></Layout></ProtectedRoute>} />
           <Route path="/admin/gasolina" element={<Navigate to="/movimientos" replace />} />
           
           {/* Catch all */}

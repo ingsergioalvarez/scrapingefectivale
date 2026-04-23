@@ -184,7 +184,7 @@ export function EfectivaleEmpleadosPage() {
               <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ alignItems: { md: 'center' } }}>
                 <Typography variant="subtitle1" sx={{ flexGrow: 1 }}>
                   Registros ({filtered.length})
-                  {scrapedAt ? ` · ${new Date(scrapedAt).toLocaleString()}` : ''}
+                  {scrapedAt ? ` · ${new Date(scrapedAt).toLocaleString('es-MX', { timeZone: 'America/Mexico_City' })}` : ''}
                   {` · Saldo total: $${totalSaldo.toFixed(2)}`}
                 </Typography>
                 <TextField size="small" label="Buscar" value={search} onChange={(e) => setSearch(e.target.value)} />

@@ -10,6 +10,8 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  Divider,
+  Chip,
   Table,
   TableBody,
   TableCell,
@@ -19,6 +21,9 @@ import {
   Paper,
   IconButton,
   Tooltip,
+  MenuItem,
+  Select,
+  FormControl,
 } from '@mui/material'
 import {
   Edit as EditIcon,
@@ -27,6 +32,7 @@ import {
 } from '@mui/icons-material'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
+import { useAuth } from '../auth/AuthContext'
 
 const tableCellStyle = {
   textTransform: 'uppercase',
@@ -36,11 +42,21 @@ const tableCellStyle = {
 }
 
 export const VehiculosPage: React.FC = () => {
+  const { hasPermission } = useAuth()
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingVehiculo, setEditingVehiculo] = useState<any | null>(null)
-  const [formData, setFormData] = useState({ placas: '', modelo: '', anio: '' })
+  const [formData, setFormData] = useState({ placas: '', modelo: '', anio: '', grupo_id: '' as any })
 
   const queryClient = useQueryClient()
+
+  // DATA FETCHING
+  const { data: groups = [] } = useQuery({
+    queryKey: ['groups'],
+    queryFn: async () => {
+      const res = await api.get('/api/identity/groups')
+      return res.data
+    }
+  })
 
   const { data: vehiculos = [], isLoading } = useQuery({
     queryKey: ['vehiculos'],
@@ -73,13 +89,18 @@ export const VehiculosPage: React.FC = () => {
 
   const handleEdit = (v: any) => {
     setEditingVehiculo(v)
-    setFormData({ placas: v.placas, modelo: v.modelo || '', anio: v.anio ? String(v.anio) : '' })
+    setFormData({ 
+      placas: v.placas, 
+      modelo: v.modelo || '', 
+      anio: v.anio ? String(v.anio) : '',
+      grupo_id: v.grupo_id || ''
+    })
     setIsDialogOpen(true)
   }
 
   const handleCreate = () => {
     setEditingVehiculo(null)
-    setFormData({ placas: '', modelo: '', anio: '' })
+    setFormData({ placas: '', modelo: '', anio: '', grupo_id: '' })
     setIsDialogOpen(true)
   }
 
@@ -94,44 +115,54 @@ export const VehiculosPage: React.FC = () => {
             ADMINISTRACIÓN DE LA FLOTA Y UNIDADES OPERATIVAS
           </Typography>
         </Box>
-        <Button
-          variant="contained"
-          fullWidth={{ xs: true, sm: false }}
-          startIcon={<AddIcon />}
-          onClick={handleCreate}
-        >
-          REGISTRAR VEHÍCULO
-        </Button>
+        {hasPermission('VEHICULOS_CREAR') && (
+          <Button
+            variant="contained"
+            fullWidth={{ xs: true, sm: false }}
+            startIcon={<AddIcon />}
+            onClick={handleCreate}
+          >
+            REGISTRAR VEHÍCULO
+          </Button>
+        )}
       </Stack>
 
       <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid rgba(0,0,0,0.05)', borderRadius: 2 }}>
         <Table>
-          <TableHead>
+          <TableHead sx={{ bgcolor: 'grey.50' }}>
             <TableRow>
-              <TableCell>PLACAS</TableCell>
-              <TableCell>MODELO / DESCRIPCIÓN</TableCell>
-              <TableCell>AÑO</TableCell>
-              <TableCell align="right">ACCIONES</TableCell>
+              <TableCell sx={{ fontWeight: 800 }}>PLACAS</TableCell>
+              <TableCell sx={{ fontWeight: 800 }}>GRUPO</TableCell>
+              <TableCell sx={{ fontWeight: 800 }}>MODELO / DESCRIPCIÓN</TableCell>
+              <TableCell sx={{ fontWeight: 800 }}>AÑO</TableCell>
+              <TableCell align="right" sx={{ fontWeight: 800 }}>ACCIONES</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {vehiculos.map((v: any) => (
               <TableRow key={v.id} hover>
                 <TableCell sx={{ ...tableCellStyle, fontWeight: 800, color: 'primary.main' }}>{v.placas.toUpperCase()}</TableCell>
+                <TableCell sx={tableCellStyle}>
+                  {v.grupo_nombre ? <Chip label={v.grupo_nombre} size="small" color="success" variant="outlined" sx={{ fontSize: '10px', fontWeight: 800 }} /> : '---'}
+                </TableCell>
                 <TableCell sx={{ ...tableCellStyle, fontWeight: 600 }}>{v.modelo?.toUpperCase() || '---'}</TableCell>
                 <TableCell sx={tableCellStyle}>{v.anio || '---'}</TableCell>
                 <TableCell align="right">
                   <Stack direction="row" spacing={1} justifyContent="flex-end">
-                    <Tooltip title="EDITAR">
-                      <IconButton size="small" onClick={() => handleEdit(v)}>
-                        <EditIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip title="INACTIVAR">
-                      <IconButton size="small" color="error" onClick={() => { if(confirm('¿Eliminar vehículo?')) deleteM.mutate(v.id) }}>
-                        <DeleteIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
+                    {hasPermission('VEHICULOS_EDITAR') && (
+                      <Tooltip title="EDITAR">
+                        <IconButton size="small" onClick={() => handleEdit(v)}>
+                          <EditIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    )}
+                    {hasPermission('VEHICULOS_ELIMINAR') && (
+                      <Tooltip title="INACTIVAR">
+                        <IconButton size="small" color="error" onClick={() => { if(confirm('¿Eliminar vehículo?')) deleteM.mutate(v.id) }}>
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    )}
                   </Stack>
                 </TableCell>
               </TableRow>
@@ -158,6 +189,21 @@ export const VehiculosPage: React.FC = () => {
                 onChange={(e) => setFormData({ ...formData, placas: e.target.value.toUpperCase() })}
               />
             </Box>
+
+            <FormControl fullWidth>
+              <Typography variant="caption" sx={{ mb: 1, display: 'block', fontWeight: 800, color: 'primary.main', textTransform: 'uppercase' }}>
+                Grupo Logístico
+              </Typography>
+              <Select
+                value={formData.grupo_id}
+                onChange={(e) => setFormData({ ...formData, grupo_id: e.target.value })}
+              >
+                <MenuItem value=""><em>SIN GRUPO (GENERAL)</em></MenuItem>
+                {groups.map((g: any) => (
+                  <MenuItem key={g.id} value={g.id}>{g.nombre?.toUpperCase()}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
 
             <Box>
               <Typography variant="caption" sx={{ mb: 1, display: 'block', fontWeight: 800, color: 'primary.main', textTransform: 'uppercase' }}>
@@ -190,7 +236,10 @@ export const VehiculosPage: React.FC = () => {
           <Button 
             variant="contained" 
             sx={{ fontWeight: 800, px: 4 }}
-            onClick={() => editingVehiculo ? updateM.mutate({ ...formData, id: editingVehiculo.id }) : createM.mutate(formData)}
+            onClick={() => editingVehiculo 
+              ? updateM.mutate({ ...formData, id: editingVehiculo.id, grupo_id: formData.grupo_id || null }) 
+              : createM.mutate({ ...formData, grupo_id: formData.grupo_id || null })
+            }
             disabled={!formData.placas}
           >
             {editingVehiculo ? 'GUARDAR' : 'REGISTRAR'}

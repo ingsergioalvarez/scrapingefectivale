@@ -6,9 +6,12 @@ const JWT_SECRET = process.env.JWT_SECRET || 'gasolina_secret_key_12345';
 export interface AuthRequest extends Request {
     usuario?: {
         id: number;
+        nombre: string;
+        email: string;
         empresa_id: number;
         roles: string[];
         permisos: string[];
+        grupos: number[];
     };
 }
 

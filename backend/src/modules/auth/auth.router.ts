@@ -34,10 +34,12 @@ authRouter.post('/login', async (req, res) => {
         const token = jwt.sign(
             {
                 sub: user.id,
+                id: user.id,
                 nombre: user.nombre,
                 email: user.email,
                 empresa_id: user.empresa_id,
-                permisos: user.permisos
+                permisos: user.permisos,
+                grupos: user.grupos
             },
             JWT_SECRET,
             { expiresIn: '8h' }
@@ -49,7 +51,8 @@ authRouter.post('/login', async (req, res) => {
                 id: user.id,
                 nombre: user.nombre,
                 email: user.email,
-                permisos: user.permisos
+                permisos: user.permisos,
+                grupos: user.grupos
             }
         });
     } catch (err) {

@@ -14,9 +14,17 @@ import {
   TableHead, 
   TableRow,
   Chip,
-  Tooltip
+  Tooltip,
+  Button,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Alert,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
+import KeyIcon from '@mui/icons-material/Key';
+import LockOpenIcon from '@mui/icons-material/LockOpen';
 import { api } from '../api/client';
 
 interface Balance {
@@ -37,6 +45,10 @@ export const BalancesPage: React.FC = () => {
   const [data, setData] = useState<Balance[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [nipDialogOpen, setNipDialogOpen] = useState(false);
+  const [selectedCuenta, setSelectedCuenta] = useState<string | null>(null);
+  const [viewedNip, setViewedNip] = useState<string | null>(null);
+  const [nipLoading, setNipLoading] = useState(false);
 
   const fetchBalances = async () => {
     try {
@@ -46,6 +58,25 @@ export const BalancesPage: React.FC = () => {
       console.error('Error fetching balances:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleOpenNipDialog = (cuenta: string) => {
+    setSelectedCuenta(cuenta);
+    setViewedNip(null);
+    setNipDialogOpen(true);
+  };
+
+  const handleConsultNip = async () => {
+    if (!selectedCuenta) return;
+    setNipLoading(true);
+    try {
+      const res = await api.get(`/api/admin/rules/nip/${selectedCuenta}`);
+      setViewedNip(res.data.nip);
+    } catch (err: any) {
+      alert('Error al consultar NIP: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setNipLoading(false);
     }
   };
 
@@ -108,6 +139,7 @@ export const BalancesPage: React.FC = () => {
               <TableCell align="right">SALDO ACTUAL</TableCell>
               <TableCell align="right">CARGA RECOMENDADA</TableCell>
               <TableCell align="right">ÚLTIMA SYNC</TableCell>
+              <TableCell align="right">SEGURIDAD</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -177,9 +209,21 @@ export const BalancesPage: React.FC = () => {
                   <TableCell align="right">
                     <Tooltip title={`Slot: ${b.slot}`}>
                       <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 500 }}>
-                        {new Date(b.scraped_at).toLocaleString('es-MX', { hour: '2-digit', minute: '2-digit' })}
+                        {new Date(b.scraped_at).toLocaleString('es-MX', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Mexico_City' })}
                       </Typography>
                     </Tooltip>
+                  </TableCell>
+                  <TableCell align="right">
+                    <Button 
+                      size="small" 
+                      variant="outlined" 
+                      color="primary"
+                      startIcon={<LockOpenIcon />}
+                      onClick={() => handleOpenNipDialog(b.cuenta)}
+                      sx={{ fontSize: '10px', fontWeight: 800, borderRadius: 2 }}
+                    >
+                      VER NIP
+                    </Button>
                   </TableCell>
                 </TableRow>
               );
@@ -194,6 +238,51 @@ export const BalancesPage: React.FC = () => {
           </TableBody>
         </Table>
       </TableContainer>
+
+      {/* DIÁLOGO DE SEGURIDAD NIP */}
+      <Dialog open={nipDialogOpen} onClose={() => setNipDialogOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontWeight: 900, color: 'primary.main' }}>
+          CONSULTA DE SEGURIDAD (NIP)
+        </DialogTitle>
+        <DialogContent dividers>
+          {!viewedNip ? (
+            <>
+              <Alert severity="warning" sx={{ mb: 2, fontWeight: 700 }}>
+                ATENCIÓN: EL ACCESO A ESTA INFORMACIÓN ES BAJO SU ESTRICTA RESPONSABILIDAD.
+              </Alert>
+              <Typography variant="body2" sx={{ textAlign: 'center', mb: 2, fontWeight: 600 }}>
+                Esta consulta será registrada en su historial de usuario para auditoría interna.<br/><br/>
+                ¿Desea continuar?
+              </Typography>
+            </>
+          ) : (
+            <Box sx={{ textAlign: 'center', py: 4 }}>
+              <Typography variant="h6" color="text.secondary" gutterBottom sx={{ fontWeight: 700 }}>
+                NIP ASIGNADO A LA TARJETA:
+              </Typography>
+              <Typography variant="h2" color="primary" sx={{ fontWeight: 900, letterSpacing: '0.5rem' }}>
+                {viewedNip}
+              </Typography>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setNipDialogOpen(false)} color="inherit" sx={{ fontWeight: 800 }}>
+            {viewedNip ? 'CERRAR' : 'CANCELAR'}
+          </Button>
+          {!viewedNip && (
+            <Button 
+              onClick={handleConsultNip} 
+              variant="contained" 
+              color="primary" 
+              disabled={nipLoading}
+              sx={{ fontWeight: 800 }}
+            >
+              {nipLoading ? 'CONSULTANDO...' : 'SÍ, CONSULTAR NIP'}
+            </Button>
+          )}
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };
