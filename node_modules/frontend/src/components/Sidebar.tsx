@@ -7,6 +7,7 @@ import RuleIcon from '@mui/icons-material/Rule';
 import HistoryIcon from '@mui/icons-material/History';
 import KeyIcon from '@mui/icons-material/Key';
 import PeopleIcon from '@mui/icons-material/People';
+import BoltIcon from '@mui/icons-material/Bolt';
 
 const menuItems = [
   { text: 'ACCESOS', icon: <KeyIcon />, path: '/accounts' },
@@ -14,6 +15,7 @@ const menuItems = [
   { text: 'REGLAS GASOLINA', icon: <RuleIcon />, path: '/admin/reglas' },
   { text: 'CHOFERES', icon: <PeopleIcon />, path: '/admin/choferes' },
   { text: 'VEHÍCULOS', icon: <DirectionsCarIcon />, path: '/admin/vehiculos' },
+  { text: 'DISPERSIÓN', icon: <BoltIcon />, path: '/admin/dispersion' },
   { text: 'MOVIMIENTOS', icon: <HistoryIcon />, path: '/movimientos' },
 ];
 

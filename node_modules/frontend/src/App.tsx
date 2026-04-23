@@ -7,6 +7,7 @@ import { BalancesPage } from './pages/BalancesPage';
 import { MovimientosPage } from './pages/MovimientosPage';
 import { ChoferesPage } from './pages/ChoferesPage';
 import { VehiculosPage } from './pages/VehiculosPage';
+import { DispersePage } from './pages/DispersePage';
 
 const lightTheme = createTheme({
   palette: {
@@ -94,6 +95,7 @@ export default function App() {
           <Route path="/admin/reglas" element={<AdminRulesPage />} />
           <Route path="/admin/choferes" element={<ChoferesPage />} />
           <Route path="/admin/vehiculos" element={<VehiculosPage />} />
+          <Route path="/admin/dispersion" element={<DispersePage />} />
           <Route path="/movimientos" element={<MovimientosPage />} />
           <Route path="/admin/gasolina" element={<Navigate to="/movimientos" replace />} />
         </Routes>
