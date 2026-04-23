@@ -1,0 +1,92 @@
+import {
+  getLatestSaldoByCuenta,
+  getLatestSaldoByTarjetaUltimos7,
+  listTopupRulesMySql,
+  listAccountsMySql,
+} from '../store/mysql-store'
+import { processEfectivaleTopup } from './topup'
+
+export async function getSaldoInfoForRequest(input: { cuenta?: string; tarjetaUltimos7?: string }) {
+  if (input.cuenta) {
+    const r = await getLatestSaldoByCuenta(input.cuenta)
+    if (!r) return null
+    const rules = await listTopupRulesMySql()
+    const rule = rules.find((rl) => rl.cuenta === input.cuenta)
+    return {
+      cuenta: input.cuenta,
+      saldo: r.saldo,
+      scrapedAt: r.scrapedAt,
+      maxSaldo: rule?.max_saldo ?? 0,
+      enabled: rule?.enabled ?? true,
+    }
+  } else if (input.tarjetaUltimos7) {
+    const r = await getLatestSaldoByTarjetaUltimos7(input.tarjetaUltimos7)
+    if (!r) return null
+    const rules = await listTopupRulesMySql()
+    const rule = rules.find((rl) => rl.cuenta === r.cuenta)
+    return {
+      cuenta: r.cuenta,
+      saldo: r.saldo,
+      scrapedAt: r.scrapedAt,
+      maxSaldo: rule?.max_saldo ?? 0,
+      enabled: rule?.enabled ?? true,
+    }
+  }
+  return null
+}
+
+export async function runSingleTopupRequest(input: {
+  cuenta?: string
+  tarjetaUltimos7?: string
+  requestedMonto: number
+  debug?: boolean
+}) {
+  const accounts = await listAccountsMySql()
+  const masterAcc = accounts.find((a) => a.app === 'efectivale' && a.username.includes('D62')) || accounts[0]
+
+  if (!masterAcc) {
+    throw new Error('No hay cuentas maestras configuradas para dispersar.')
+  }
+
+  const { clienteId, consignatarioId } = JSON.parse(masterAcc.extra_json ?? '{}')
+  if (!clienteId || !consignatarioId) {
+    throw new Error('La cuenta maestra no tiene ClienteID o ConsignatarioID.')
+  }
+
+  // Si viene por tarjeta, primero resolvemos la cuenta
+  let targetCuenta = input.cuenta
+  if (!targetCuenta && input.tarjetaUltimos7) {
+    const info = await getSaldoInfoForRequest({ tarjetaUltimos7: input.tarjetaUltimos7 })
+    if (!info) throw new Error(`No se encontró cuenta para tarjeta ...${input.tarjetaUltimos7}`)
+    targetCuenta = info.cuenta
+  }
+
+  if (!targetCuenta) throw new Error('No se especificó cuenta o tarjeta válida.')
+
+  const result = await processEfectivaleTopup({
+    masterAccount: {
+      id: masterAcc.id,
+      username: masterAcc.username,
+      passwordEnc: masterAcc.password_enc, // Cambiado
+      clienteId,
+      consignatarioId,
+    },
+    topupRule: {
+      cuenta: targetCuenta,
+      monto: input.requestedMonto,
+    },
+    debug: input.debug || false,
+  })
+
+  if (!result.success) {
+    const err: any = new Error(result.error || 'Error desconocido en la dispersión.')
+    err.screenshotPath = result.screenshotPath
+    throw err
+  }
+
+  return {
+    success: true,
+    message: result.message,
+    monto: input.requestedMonto,
+  }
+}
