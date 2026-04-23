@@ -1,5 +1,5 @@
-import { Navigate, Route, Routes } from 'react-router-dom';
-import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { ThemeProvider, createTheme, CssBaseline, Box, CircularProgress } from '@mui/material';
 import { Layout } from './components/Layout';
 import { AccountsPage } from './pages/AccountsPage';
 import { AdminRulesPage } from './pages/AdminRulesPage';
@@ -8,6 +8,8 @@ import { MovimientosPage } from './pages/MovimientosPage';
 import { ChoferesPage } from './pages/ChoferesPage';
 import { VehiculosPage } from './pages/VehiculosPage';
 import { DispersePage } from './pages/DispersePage';
+import { LoginPage } from './pages/LoginPage';
+import { AuthProvider, useAuth } from './auth/AuthContext';
 
 const lightTheme = createTheme({
   palette: {
@@ -83,23 +85,54 @@ const lightTheme = createTheme({
   },
 });
 
+const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { token, isLoading } = useAuth();
+  const location = useLocation();
+
+  if (isLoading) {
+    return (
+      <Box sx={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center' }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  if (!token) {
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  return <>{children}</>;
+};
+
 export default function App() {
   return (
-    <ThemeProvider theme={lightTheme}>
-      <CssBaseline />
-      <Layout>
+    <AuthProvider>
+      <ThemeProvider theme={lightTheme}>
+        <CssBaseline />
         <Routes>
-          <Route path="/" element={<Navigate to="/balances" replace />} />
-          <Route path="/accounts" element={<AccountsPage />} />
-          <Route path="/balances" element={<BalancesPage />} />
-          <Route path="/admin/reglas" element={<AdminRulesPage />} />
-          <Route path="/admin/choferes" element={<ChoferesPage />} />
-          <Route path="/admin/vehiculos" element={<VehiculosPage />} />
-          <Route path="/admin/dispersion" element={<DispersePage />} />
-          <Route path="/movimientos" element={<MovimientosPage />} />
+          <Route path="/login" element={<LoginPage />} />
+          
+          <Route path="/" element={
+            <ProtectedRoute>
+              <Layout>
+                <Navigate to="/balances" replace />
+              </Layout>
+            </ProtectedRoute>
+          } />
+
+          <Route path="/accounts" element={<ProtectedRoute><Layout><AccountsPage /></Layout></ProtectedRoute>} />
+          <Route path="/balances" element={<ProtectedRoute><Layout><BalancesPage /></Layout></ProtectedRoute>} />
+          <Route path="/admin/reglas" element={<ProtectedRoute><Layout><AdminRulesPage /></Layout></ProtectedRoute>} />
+          <Route path="/admin/choferes" element={<ProtectedRoute><Layout><ChoferesPage /></Layout></ProtectedRoute>} />
+          <Route path="/admin/vehiculos" element={<ProtectedRoute><Layout><VehiculosPage /></Layout></ProtectedRoute>} />
+          <Route path="/admin/dispersion" element={<ProtectedRoute><Layout><DispersePage /></Layout></ProtectedRoute>} />
+          <Route path="/movimientos" element={<ProtectedRoute><Layout><MovimientosPage /></Layout></ProtectedRoute>} />
           <Route path="/admin/gasolina" element={<Navigate to="/movimientos" replace />} />
+          
+          {/* Catch all */}
+          <Route path="*" element={<Navigate to="/balances" replace />} />
         </Routes>
-      </Layout>
-    </ThemeProvider>
+      </ThemeProvider>
+    </AuthProvider>
   );
 }

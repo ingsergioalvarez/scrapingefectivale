@@ -8,6 +8,8 @@ import { scrapeRouter } from './modules/scrape'
 import { reportsRouter } from './modules/reports'
 import { utilsRouter } from './modules/utils'
 import { adminRouter } from './modules/admin'
+import authRouter from './modules/auth/auth.router'
+import { verificarToken } from './middleware/verificarToken'
 import { buildEfectivaleGasolinaReporteXlsx, maybeEmailReport } from './services/reporting'
 import { runFridayTopupsEfectivale } from './services/topup'
 import { startTelegramBot, stopTelegramBot } from './services/telegram-bot'
@@ -25,12 +27,13 @@ app.get('/health', async (_req, res) => {
   res.json({ ok: true })
 })
 
-app.use('/api/accounts', accountsRouter)
-app.use('/api/sessions', sessionsRouter)
-app.use('/api/scrape', scrapeRouter)
-app.use('/api/reports', reportsRouter)
-app.use('/api/utils', utilsRouter)
-app.use('/api/admin', adminRouter)
+app.use('/api/auth', authRouter)
+app.use('/api/accounts', verificarToken, accountsRouter)
+app.use('/api/sessions', verificarToken, sessionsRouter)
+app.use('/api/scrape', verificarToken, scrapeRouter)
+app.use('/api/reports', verificarToken, reportsRouter)
+app.use('/api/utils', verificarToken, utilsRouter)
+app.use('/api/admin', verificarToken, adminRouter)
 app.use(errorMiddleware)
 
 app.listen(config.port, '0.0.0.0', () => {

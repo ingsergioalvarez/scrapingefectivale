@@ -12,9 +12,10 @@ function splitSqlStatements(sql: string): string[] {
 }
 
 async function main() {
-  const sqlPath = path.resolve('sql', 'init.sql')
-  const sql = fs.readFileSync(sqlPath, 'utf8')
-  const statements = splitSqlStatements(sql)
+  const sqlFiles = [
+    path.resolve('sql', 'init.sql'),
+    path.resolve('database', 'config_initdb.sql')
+  ];
 
   // 1) Conectar sin DB para poder crearla si no existe
   const conn = await mysql.createConnection({
@@ -26,21 +27,29 @@ async function main() {
   })
 
   try {
-    // Crear DB si no existe
+    // Asegurar que la DB existe antes de nada
     await conn.query(
       `CREATE DATABASE IF NOT EXISTS \`${config.mysql.database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`
     )
     await conn.query(`USE \`${config.mysql.database}\`;`)
 
-    for (const st of statements) {
-      // Omitir CREATE DATABASE / USE del archivo (ya lo hacemos aquí)
-      const up = st.toUpperCase()
-      if (up.startsWith('CREATE DATABASE')) continue
-      if (up.startsWith('USE ')) continue
-      await conn.query(st)
+    for (const sqlPath of sqlFiles) {
+      if (!fs.existsSync(sqlPath)) continue;
+      
+      console.log(`Ejecutando: ${path.basename(sqlPath)}...`);
+      const sql = fs.readFileSync(sqlPath, 'utf8');
+      const statements = splitSqlStatements(sql);
+
+      for (const st of statements) {
+        // Omitir comandos de creación de DB/USE si vienen dentro del archivo (ya lo manejamos arriba)
+        const up = st.toUpperCase();
+        if (up.startsWith('CREATE DATABASE')) continue;
+        if (up.startsWith('USE ')) continue;
+        await conn.query(st);
+      }
     }
 
-    console.log(`OK: esquema creado/validado en BD "${config.mysql.database}".`)
+    console.log(`OK: esquema base y de seguridad creados/validados en BD "${config.mysql.database}".`);
   } finally {
     await conn.end()
   }

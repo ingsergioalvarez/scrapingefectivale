@@ -67,10 +67,12 @@ INSERT IGNORE INTO sys_roles (nombre, descripcion) VALUES
 INSERT IGNORE INTO sys_rol_permisos (rol_id, permiso_id) 
 SELECT 1, id FROM sys_permisos;
 
--- Usuario Inicial: admin@sistema.com / admin123 (Hash de prueba, se debe cambiar)
--- Hash para 'admin123' (ejemplo bcrypt)
+-- Usuario Inicial: admin@sistema.com / admin123
 INSERT IGNORE INTO sys_usuarios (nombre, email, password_hash) VALUES 
-('Administrador', 'admin@sistema.com', '$2b$10$wOOp6oIDj5bZgU.38D4FxeP2m0Xj2Ym9L0v7D8.Xm6Yc08f1bM2W.');
+('Administrador', 'admin@sistema.com', '$2b$10$a.A5zLFb.34AkyOFQDiFsuIlYWvjtWMirOyASht4mZzmbkxURonfy');
+
+-- En caso de que ya exista pero el hash fuera incorrecto
+UPDATE sys_usuarios SET password_hash = '$2b$10$a.A5zLFb.34AkyOFQDiFsuIlYWvjtWMirOyASht4mZzmbkxURonfy' WHERE email = 'admin@sistema.com';
 
 -- Asignación de rol al usuario admin
 INSERT IGNORE INTO sys_usuario_roles (usuario_id, rol_id) VALUES (1, 1);

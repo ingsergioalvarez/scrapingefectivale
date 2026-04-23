@@ -33,7 +33,7 @@ export const config = {
     port: Number(process.env.MYSQL_PORT ?? 3306),
     user: process.env.MYSQL_USER ?? 'root',
     password: process.env.MYSQL_PASSWORD ?? '',
-    database: process.env.MYSQL_DATABASE ?? 'ConrolVehicular',
+    database: process.env.MYSQL_DATABASE ?? 'ControlVehicular',
   },
   encryptionKeyBase64: process.env.ENCRYPTION_KEY_BASE64 ?? '',
   playwrightHeadless: (process.env.PLAYWRIGHT_HEADLESS ?? 'true').toLowerCase() !== 'false',
@@ -41,5 +41,7 @@ export const config = {
     .split(/[\s,]+/)
     .map(s => s.trim())
     .filter(s => s.length > 0)
-} as const
+} as const;
+
+console.log(`[config] MySQL Database: ${config.mysql.database}`);
 

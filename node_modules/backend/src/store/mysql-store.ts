@@ -907,3 +907,25 @@ export async function updateWalletBalance(accountId: number, balance: number) {
     [balance, accountId]
   )
 }
+
+export async function getUserByEmail(email: string): Promise<any | null> {
+  const [rows]: any = await pool.query(`
+    SELECT 
+      u.*,
+      GROUP_CONCAT(DISTINCT p.codigo) as permisos_lista
+    FROM sys_usuarios u
+    LEFT JOIN sys_usuario_roles ur ON u.id = ur.usuario_id
+    LEFT JOIN sys_rol_permisos rp ON ur.rol_id = rp.rol_id
+    LEFT JOIN sys_permisos p ON rp.permiso_id = p.id
+    WHERE u.email = ? AND u.activo = 1
+    GROUP BY u.id
+  `, [email])
+
+  if (rows.length === 0) return null
+  
+  const user = rows[0]
+  return {
+    ...user,
+    permisos: user.permisos_lista ? user.permisos_lista.split(',') : []
+  }
+}
