@@ -115,9 +115,9 @@ export const BalancesPage: React.FC = () => {
               const currentSaldo = Number(b.saldo || 0);
               const maxSaldo = Number(b.max_saldo || 0);
               const minSaldo = b.min_saldo !== null ? Number(b.min_saldo) : null;
+              const isAcumular = b.modo_carga === 'ACUMULAR';
               
-              const diff = maxSaldo - currentSaldo;
-              const recommended = diff > 0 ? diff : 0;
+              const recommended = isAcumular ? maxSaldo : (maxSaldo - currentSaldo > 0 ? maxSaldo - currentSaldo : 0);
               
               return (
                 <TableRow key={b.cuenta} hover>
@@ -159,12 +159,17 @@ export const BalancesPage: React.FC = () => {
                   </TableCell>
                   <TableCell align="right">
                     {recommended > 0 ? (
-                      <Chip 
-                        label={`+ $${recommended.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`} 
-                        color="success" 
-                        size="small" 
-                        sx={{ fontWeight: 800, borderRadius: 1 }} 
-                      />
+                      <Stack direction="column" alignItems="flex-end" spacing={0.5}>
+                        <Chip 
+                          label={`+ $${recommended.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`} 
+                          color={isAcumular ? "secondary" : "success"} 
+                          size="small" 
+                          sx={{ fontWeight: 800, borderRadius: 1 }} 
+                        />
+                        <Typography variant="caption" sx={{ fontSize: '8px', fontWeight: 900, color: 'text.disabled', textTransform: 'uppercase' }}>
+                          {isAcumular ? 'MODO ACUMULAR' : 'MODO COMPLETAR'}
+                        </Typography>
+                      </Stack>
                     ) : (
                       <Typography variant="caption" color="text.disabled">---</Typography>
                     )}

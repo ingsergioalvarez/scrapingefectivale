@@ -44,6 +44,7 @@ type TopupRule = {
   min_saldo: number
   max_saldo: number
   frecuencia: string | null
+  modo_carga: 'COMPLETAR' | 'ACUMULAR' | null
   enabled: boolean
   inactive_reason: string | null
   notes: string | null
@@ -144,6 +145,7 @@ export function AdminRulesPage() {
               <TableCell>TITULAR / SERIE</TableCell>
               <TableCell>ORIGEN / CUENTA</TableCell>
               <TableCell>FRECUENCIA</TableCell>
+              <TableCell>POLÍTICA</TableCell>
               <TableCell>CHOFER</TableCell>
               <TableCell>UNIDAD</TableCell>
               <TableCell align="right">MÍNIMO</TableCell>
@@ -165,6 +167,16 @@ export function AdminRulesPage() {
                 </TableCell>
                 <TableCell>
                   <Typography variant="caption" sx={{ fontWeight: 800, color: 'text.secondary' }}>{r.frecuencia || 'DEMANDA'}</Typography>
+                </TableCell>
+                <TableCell>
+                  <Tooltip title={r.modo_carga === 'ACUMULAR' ? 'Suma el máximo al saldo actual' : 'Lleva el saldo hasta el nivel máximo'}>
+                    <Chip 
+                      label={r.modo_carga || 'COMPLETAR'} 
+                      size="small" 
+                      color={r.modo_carga === 'ACUMULAR' ? 'secondary' : 'default'}
+                      sx={{ fontWeight: 900, fontSize: '9px', height: 18 }} 
+                    />
+                  </Tooltip>
                 </TableCell>
                 <TableCell sx={{ textTransform: 'uppercase', fontSize: '0.8rem', fontWeight: 600 }}>{r.chofer_nombre || '---'}</TableCell>
                 <TableCell sx={{ textTransform: 'uppercase', fontSize: '0.8rem', fontWeight: 800, color: 'primary.main' }}>{r.vehiculo_placas || '---'}</TableCell>
@@ -283,6 +295,20 @@ export function AdminRulesPage() {
                 onChange={e => setEditingRow(p => p ? {...p, frecuencia: e.target.value} : null)}
               >
                 {FRECUENCIAS.map(f => <MenuItem key={f} value={f}>{f}</MenuItem>)}
+              </Select>
+            </Grid>
+
+            <Grid item xs={6}>
+              <Typography variant="caption" sx={{ mb: 1, display: 'block', fontWeight: 800, color: 'secondary.main', textTransform: 'uppercase' }}>
+                Modo de Carga (Política)
+              </Typography>
+              <Select
+                fullWidth
+                value={editingRow?.modo_carga || 'COMPLETAR'}
+                onChange={e => setEditingRow(p => p ? {...p, modo_carga: e.target.value as any} : null)}
+              >
+                <MenuItem value="COMPLETAR">COMPLETAR (HASTA EL MÁXIMO)</MenuItem>
+                <MenuItem value="ACUMULAR">ACUMULAR (SUMAR MÁXIMO)</MenuItem>
               </Select>
             </Grid>
 

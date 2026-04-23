@@ -678,6 +678,7 @@ export async function upsertTopupRuleMySql(rule: Partial<TopupRuleRow> & { cuent
         min_saldo = ?, 
         max_saldo = ?, 
         frecuencia = ?,
+        modo_carga = ?,
         enabled = ?, 
         inactive_reason = ?,
         notes = ? 
@@ -691,6 +692,7 @@ export async function upsertTopupRuleMySql(rule: Partial<TopupRuleRow> & { cuent
         rule.min_saldo ?? 0, 
         rule.max_saldo ?? 0, 
         rule.frecuencia ?? 'A LIBRE DEMANDA',
+        rule.modo_carga ?? 'COMPLETAR',
         rule.enabled ?? true, 
         rule.inactive_reason ?? null,
         rule.notes ?? null, 
@@ -701,8 +703,8 @@ export async function upsertTopupRuleMySql(rule: Partial<TopupRuleRow> & { cuent
   } else {
     const [result]: any = await pool.execute(
       `INSERT INTO telegram_topup_rules 
-        (efectivale_account_id, cuenta, alias, short_code, chofer_id, vehiculo_id, min_saldo, max_saldo, frecuencia, enabled, inactive_reason, notes) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (efectivale_account_id, cuenta, alias, short_code, chofer_id, vehiculo_id, min_saldo, max_saldo, frecuencia, modo_carga, enabled, inactive_reason, notes) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         rule.efectivale_account_id, 
         rule.cuenta, 
@@ -713,6 +715,7 @@ export async function upsertTopupRuleMySql(rule: Partial<TopupRuleRow> & { cuent
         rule.min_saldo ?? 0, 
         rule.max_saldo ?? 0, 
         rule.frecuencia ?? 'A LIBRE DEMANDA',
+        rule.modo_carga ?? 'COMPLETAR',
         rule.enabled ?? true, 
         rule.inactive_reason ?? null,
         rule.notes ?? null
@@ -819,6 +822,7 @@ export async function listLatestBalances(): Promise<any[]> {
       r.min_saldo,
       r.max_saldo,
       r.frecuencia,
+      r.modo_carga,
       c.nombre as chofer_nombre,
       s.saldo, 
       s.scraped_at, 
